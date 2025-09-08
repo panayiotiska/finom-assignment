@@ -35,6 +35,7 @@ def validate_date(date_str: str) -> None:
 def check_anomalies(target_date: str, algorithm: str = "zscore", country: str = None):
     """
     Unified function to check anomalies for a date (and optionally country) using specified algorithm
+    Includes caching to avoid recomputing results
 
     Args:
         target_date: Date string in YYYY-MM-DD format
@@ -47,12 +48,28 @@ def check_anomalies(target_date: str, algorithm: str = "zscore", country: str = 
     conn = sqlite3.connect("registrations.db")
     cursor = conn.cursor()
 
-    # Get the unified anomaly detection query
-    query = get_anomaly_query(target_date, algorithm, country)
-
     if country:
-        # Single country result
+        # Check cache for single country
+        cursor.execute(
+            """
+            SELECT is_anomaly, registrations_cnt FROM anomaly_results
+            WHERE registration_dt = ? AND country = ? AND algorithm = ?
+        """,
+            (target_date, country, algorithm),
+        )
+
+        cached_result = cursor.fetchone()
+        if cached_result:
+            conn.close()
+            is_anomaly, registrations_cnt = cached_result
+            return CountryAnomalyInfo(
+                is_anomaly=bool(is_anomaly), registrations_cnt=int(registrations_cnt)
+            )
+
+        # No cached result, run algorithm
+        query = get_anomaly_query(target_date, algorithm, country)
         result = cursor.execute(query).fetchone()
+
         if result:
             is_anomaly, registrations_cnt = result
             country_info = CountryAnomalyInfo(
@@ -61,16 +78,80 @@ def check_anomalies(target_date: str, algorithm: str = "zscore", country: str = 
         else:
             # No data for this country/date combination
             country_info = CountryAnomalyInfo(is_anomaly=False, registrations_cnt=0)
+
+        # Cache the result
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO anomaly_results
+            (registration_dt, country, is_anomaly, algorithm, registrations_cnt)
+            VALUES (?, ?, ?, ?, ?)
+        """,
+            (
+                target_date,
+                country,
+                bool(country_info.is_anomaly),
+                algorithm,
+                country_info.registrations_cnt,
+            ),
+        )
+
+        conn.commit()
         conn.close()
         return country_info
+
     else:
-        # All countries result
+        # Check cache for all countries
+        cursor.execute(
+            """
+            SELECT country, is_anomaly, registrations_cnt FROM anomaly_results
+            WHERE registration_dt = ? AND algorithm = ?
+            ORDER BY country
+        """,
+            (target_date, algorithm),
+        )
+
+        cached_results = cursor.fetchall()
+
+        # If we have cached results for all countries that exist in the database
+        if cached_results:
+            # Get all countries that should exist
+            cursor.execute("SELECT DISTINCT country FROM registrations")
+            all_countries = {row[0] for row in cursor.fetchall()}
+
+            cached_countries = {row[0] for row in cached_results}
+
+            # If we have results for all countries, return cached results
+            if all_countries.issubset(cached_countries):
+                results = {}
+                for country_code, is_anomaly, registrations_cnt in cached_results:
+                    results[country_code] = CountryAnomalyInfo(
+                        is_anomaly=bool(is_anomaly),
+                        registrations_cnt=int(registrations_cnt),
+                    )
+                conn.close()
+                return results
+
+        # Either no cached results or incomplete cache, run algorithm for all countries
+        query = get_anomaly_query(target_date, algorithm, country)
         results = {}
+
         for row in cursor.execute(query):
             country_code = row[0]
             results[country_code] = CountryAnomalyInfo(
                 is_anomaly=bool(row[1]), registrations_cnt=int(row[2])
             )
+
+            # Cache each country's result
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO anomaly_results
+                (registration_dt, country, is_anomaly, algorithm, registrations_cnt)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (target_date, country_code, bool(row[1]), algorithm, int(row[2])),
+            )
+
+        conn.commit()
         conn.close()
         return results
 

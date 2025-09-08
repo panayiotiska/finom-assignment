@@ -1,13 +1,9 @@
-#!/usr/bin/env python3
-"""
-Test script to verify the versioned anomaly detection endpoints work correctly.
-"""
-
 import urllib.request
 import json
 import time
 import subprocess
 import sys
+import sqlite3
 
 
 def start_server():
@@ -71,6 +67,59 @@ def test_endpoint(url, data, description):
         return None
 
 
+def test_caching(base_url, test_date, test_country):
+    """Test basic caching functionality"""
+    print("\nTesting caching...")
+
+    # Clear existing cache for test date to ensure clean test
+    conn = sqlite3.connect("registrations.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM anomaly_results WHERE registration_dt = ?", (test_date,)
+    )
+    conn.commit()
+
+    cursor.execute("SELECT COUNT(*) FROM anomaly_results")
+    initial_count = cursor.fetchone()[0]
+
+    # Make first request
+    result1 = test_endpoint(
+        f"{base_url}/check_anomaly/zscore",
+        {"registration_dt": test_date},
+        "First request to cache results",
+    )
+
+    # Check if cache was populated
+    cursor.execute("SELECT COUNT(*) FROM anomaly_results")
+    after_first_count = cursor.fetchone()[0]
+
+    # Make same request again
+    result2 = test_endpoint(
+        f"{base_url}/check_anomaly/zscore",
+        {"registration_dt": test_date},
+        "Second request to test cache reuse",
+    )
+
+    # Check if cache count stayed the same
+    cursor.execute("SELECT COUNT(*) FROM anomaly_results")
+    after_second_count = cursor.fetchone()[0]
+    conn.close()
+
+    # Test results
+    cache_created = after_first_count > initial_count
+    cache_reused = after_second_count == after_first_count
+    results_identical = result1 == result2
+
+    print(f"Cache created: {cache_created}")
+    print(f"Cache reused: {cache_reused}")
+    print(f"Results identical: {results_identical}")
+
+    success = cache_created and cache_reused and results_identical
+    print(f"Caching test: {'PASS' if success else 'FAIL'}")
+
+    return success
+
+
 def main():
     # Start the server
     server_process = start_server()
@@ -120,6 +169,9 @@ def main():
             "Backward compatibility (default algorithm)",
         )
 
+        # Test 6: Caching behavior
+        caching_test_result = test_caching(base_url, test_date, test_country)
+
         print("\n" + "=" * 50)
         print("SUMMARY")
 
@@ -142,6 +194,12 @@ def main():
                 print("Backward compatibility maintained")
             else:
                 print("Backward compatibility issue detected")
+
+        # Report caching test results
+        if caching_test_result:
+            print("Caching system tests: PASSED")
+        else:
+            print("Caching system tests: FAILED")
 
         print("\nAll tests completed")
         return True

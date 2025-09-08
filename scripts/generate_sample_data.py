@@ -22,6 +22,22 @@ def init_db():
     """
     )
 
+    # Create anomaly_results table for caching
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anomaly_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            registration_dt TEXT NOT NULL,
+            country TEXT NOT NULL,
+            is_anomaly BOOLEAN NOT NULL,
+            algorithm TEXT NOT NULL,
+            registrations_cnt INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(registration_dt, country, algorithm)
+        )
+    """
+    )
+
     conn.commit()
     return conn
 
