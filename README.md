@@ -2,7 +2,7 @@
 
 Statistical anomaly detection FastAPI service. Detects unusual registration spikes by country using z-score and percentiles algorithms.
 
-**Total time spent ~2 Hours
+**Total time spent ~3 Hours (2 hours for initial implementation + 1 hour to align with requirements after assignment received)
 
 ## Features
 
@@ -18,6 +18,7 @@ Statistical anomaly detection FastAPI service. Detects unusual registration spik
 - app.py -> Main FastAPI app and anomaly detection logic
 - queries.py -> The SQL query logic for anomaly detection
 - Dockerfile -> Docker configuration for containerizing the app
+- tests/test_endpoints.py -> Unit and integration tests for API endpoints
 
 ## Anomaly Detection Logic
 
@@ -102,3 +103,6 @@ Edit `config.py` to adjust:
 - `MULTIPLIER = 2` - Z-score threshold (|z| > threshold is anomalous)
 - `PERCENTILE_THRESHOLD = 0.05` - Percentile threshold for percentiles algorithm (0.05 = 95th percentile)
 
+## Caching
+
+The caching system stores anomaly detection results in a dedicated SQLite table called anomaly_results to avoid extra computations. When a request comes in, the system first checks if results already exist for the specific combination of registration_dt, country, and algorithm. If cached results are found, they're returned immediately without running the expensive SQL queries for anomaly detection. If no cache exists, the system performs the anomaly detection algorithm as usual and stores the results in the cache table for future requests. This approach significantly improves performance for repeated queries while maintaining data consistency, as the cache uses a unique constraint to prevent duplicate entries for the same parameters.
