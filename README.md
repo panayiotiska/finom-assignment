@@ -1,15 +1,15 @@
 # Anomaly Detection App
 
-Moving average based anomaly detection FastAPI service. Detects unusual registration spikes by country using the max available hour.
+Z-score based anomaly detection FastAPI service. Detects unusual registration spikes by country using statistical analysis.
 
 **Total time spent ~2 Hours
 
 ## Features
 
 - Uses SQL for anomaly detection
-- Calculates moving averages and standard deviation
+- Calculates z-scores with moving averages and standard deviation
 - Docker containerized
-- FastAPI endpoints for the current hour's results
+- FastAPI endpoints for date-specific anomaly checking
 
 ## Files
 
@@ -20,10 +20,11 @@ Moving average based anomaly detection FastAPI service. Detects unusual registra
 
 ## Anomaly Detection Logic
 
-1. Groups registrations by hour and country
-2. Calculates moving average over last X hours (excluding current)
+1. Groups registrations by day and country
+2. Calculates moving average over last X days (excluding current)
 3. Computes standard deviation of the window
-4. Flags anomalies when current hour > moving_avg + (multiplier × std_dev)
+4. Calculates z-score: (current - mean) / std_dev
+5. Flags anomalies when |z-score| > threshold
 
 ## Setup
 
@@ -48,12 +49,26 @@ python app.py
 
 ## API Endpoints
 
-- `GET /anomalies` - Get max available hour anomaly detection results for all countries
-- `GET /anomalies/{country}` - Get max available hour anomaly detection results for specific country
+- `POST /check_anomaly` - Check anomalies for all countries on a specific date
+- `POST /check_anomaly/country` - Check anomaly for a specific country on a specific date
+
+### Usage Examples
+
+```bash
+# Check all countries for a specific date
+curl -X POST http://localhost:8000/check_anomaly \
+  -H "Content-Type: application/json" \
+  -d '{"registration_dt": "2025-08-31"}'
+
+# Check specific country for a specific date
+curl -X POST http://localhost:8000/check_anomaly/country \
+  -H "Content-Type: application/json" \
+  -d '{"country": "UK", "registration_dt": "2025-08-31"}'
+```
 
 ## Configuration
 
 Edit `config.py` to adjust:
-- `WINDOW_HOURS = 4` - Moving average window size
-- `MULTIPLIER = 2` - Standard deviation multiplier for threshold
+- `WINDOW_DAYS = 4` - Moving average window size (days to look back)
+- `MULTIPLIER = 2` - Z-score threshold (|z| > threshold is anomalous)
 

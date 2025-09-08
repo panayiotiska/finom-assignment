@@ -18,13 +18,13 @@ def init_db():
     conn.commit()
     return conn
 
-def generate_sample_data(num_records=1000, last_days=3):
+def generate_sample_data(num_records=5000, last_days=14):
     """
     Generate random sample data and store in database
 
     Args:
-        num_records: Number of records to generate
-        last_days: Number of days to look back
+        num_records: Number of records to generate (default: 5000)
+        last_days: Number of days to look back (default: 14)
 
     Returns:
         None
